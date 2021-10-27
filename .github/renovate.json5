@@ -1,0 +1,12 @@
+{
+  enabled: true,
+  timezone: "America/Chicago",
+  extends: ["config:base"],
+  rebaseWhen: "conflicted",
+  dependencyDashboard: false,
+  prConcurrentLimit: 0,
+  prHourlyLimit: 0,
+  assignees: ["jmmaloney4"],
+  requiredStatusChecks: null,
+  automerge: true
+}

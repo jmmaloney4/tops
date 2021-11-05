@@ -10,6 +10,9 @@ use std::io::stdin;
 use std::path::Path;
 
 // mod serde;
+mod de;
+mod error;
+mod ser;
 
 fn main() {
     let matches = App::new(crate_name!())
@@ -51,8 +54,6 @@ fn main() {
                 }
                 Ok(block) => block,
             };
-
-            
 
             println!("{}", block.cid());
         }

@@ -8,7 +8,8 @@ use std::fs;
 use std::io::prelude::*;
 use std::io::stdin;
 use std::path::Path;
-use chrono::prelude::*;
+
+// mod serde;
 
 fn main() {
     let matches = App::new(crate_name!())
@@ -33,8 +34,11 @@ fn main() {
             };
 
             let mut s = String::new();
-            if let Err(e) = f.read_to_string(&mut s) {
-                panic!("{}", e);
+            match f.read_to_string(&mut s) {
+                Err(e) => {
+                    panic!("{}", e);
+                }
+                Ok(_) => {}
             };
 
             let block = match Block::<DefaultParams>::encode(
@@ -48,6 +52,8 @@ fn main() {
                 Ok(block) => block,
             };
 
+            
+
             println!("{}", block.cid());
         }
         _ => {
@@ -56,22 +62,12 @@ fn main() {
     }
 }
 
-trait ToIpld {
-    fn to_ipld(self) -> Ipld;
-}
-
 enum Revision {
     FileRevision(FileRevision),
 }
 
 struct FileRevision {
     blob: Blob,
-}
-
-struct FileMetadata {
-    name: String,
-    date: DateTime<Utc>,
-    date_added: DateTime<Utc>,
 }
 
 struct Blob {
@@ -87,12 +83,6 @@ impl Blob {
 
     fn from(data: Vec<u8>) -> Self {
         Blob { data: data }
-    }
-}
-
-impl ToIpld for Blob {
-    fn to_ipld(self) -> Ipld {
-        Ipld::Bytes(self.data)
     }
 }
 

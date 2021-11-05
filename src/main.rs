@@ -8,6 +8,7 @@ use std::fs;
 use std::io::prelude::*;
 use std::io::stdin;
 use std::path::Path;
+use serde::Serialize;
 
 // mod serde;
 mod de;
@@ -44,18 +45,21 @@ fn main() {
                 Ok(_) => {}
             };
 
-            let block = match Block::<DefaultParams>::encode(
-                DagCborCodec,
-                Code::Sha2_256,
-                &Ipld::Bytes(s.into_bytes()),
-            ) {
-                Err(e) => {
-                    panic!("{}", e)
-                }
-                Ok(block) => block,
-            };
+            let b = Blob::from(s.as_bytes().to_vec());
+            println!("{:?}", ser::to_ipld(&b));
 
-            println!("{}", block.cid());
+            // let block = match Block::<DefaultParams>::encode(
+            //     DagCborCodec,
+            //     Code::Sha2_256,
+            //     &Ipld::Bytes(s.into_bytes()),
+            // ) {
+            //     Err(e) => {
+            //         panic!("{}", e)
+            //     }
+            //     Ok(block) => block,
+            // };
+
+            // println!("{}", block.cid());
         }
         _ => {
             println!("{}", matches.usage());
@@ -71,6 +75,7 @@ struct FileRevision {
     blob: Blob,
 }
 
+#[derive(Serialize, Debug, PartialEq, Eq)]
 struct Blob {
     data: Vec<u8>,
 }

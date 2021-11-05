@@ -4,28 +4,23 @@ use serde::{ser, Serialize};
 use std::collections::BTreeMap;
 
 pub struct IpldSerializer {
-    // This string starts empty and JSON is appended as values are serialized.
     output: Ipld,
 }
 
-// By convention, the public API of a Serde serializer is one or more `to_abc`
-// functions such as `to_string`, `to_bytes`, or `to_writer` depending on what
-// Rust types the serializer is able to produce as output.
-//
-// This basic serializer supports only `to_string`.
+pub fn to_ipld<T>(value: &T) -> Result<Ipld>
+where
+    T: ?Sized + Serialize,
+{
+    let mut serializer = IpldSerializer {
+        output: Ipld::Null,
+    };
+    value.serialize(&mut serializer)?;
+    Ok(serializer.output)
+}
 
-// pub fn to_string<T>(value: &T) -> Result<String>
-// where
-//     T: Serialize,
-// {
-//     let mut serializer = Serializer {
-//         output: String::new(),
-//     };
-//     value.serialize(&mut serializer)?;
-//     Ok(serializer.output)
-// }
+
 impl<'a> ser::Serializer for &'a mut IpldSerializer {
-    type Ok = Ipld;
+    type Ok = ();
     type Error = Error;
 
     type SerializeSeq = Self;
@@ -36,77 +31,77 @@ impl<'a> ser::Serializer for &'a mut IpldSerializer {
     type SerializeStruct = Self;
     type SerializeStructVariant = Self;
 
-    fn serialize_bool(self, v: bool) -> Result<Ipld> {
+    fn serialize_bool(self, v: bool) -> Result<()> {
         self.output = Ipld::Bool(v);
-        Ok(self.output)
+        Ok(())
     }
 
-    fn serialize_i8(self, v: i8) -> Result<Ipld> {
+    fn serialize_i8(self, v: i8) -> Result<()> {
         self.serialize_i128(i128::from(v))
     }
 
-    fn serialize_i16(self, v: i16) -> Result<Ipld> {
+    fn serialize_i16(self, v: i16) -> Result<()> {
         self.serialize_i128(i128::from(v))
     }
 
-    fn serialize_i32(self, v: i32) -> Result<Ipld> {
+    fn serialize_i32(self, v: i32) -> Result<()> {
         self.serialize_i128(i128::from(v))
     }
 
-    fn serialize_i64(self, v: i64) -> Result<Ipld> {
+    fn serialize_i64(self, v: i64) -> Result<()> {
         self.serialize_i128(i128::from(v))
     }
 
-    fn serialize_i128(self, v: i128) -> Result<Ipld> {
+    fn serialize_i128(self, v: i128) -> Result<()> {
         self.output = Ipld::Integer(v);
-        Ok(self.output)
+        Ok(())
     }
 
-    fn serialize_u8(self, v: u8) -> Result<Ipld> {
+    fn serialize_u8(self, v: u8) -> Result<()> {
         self.serialize_u64(u64::from(v))
     }
 
-    fn serialize_u16(self, v: u16) -> Result<Ipld> {
+    fn serialize_u16(self, v: u16) -> Result<()> {
         self.serialize_u64(u64::from(v))
     }
 
-    fn serialize_u32(self, v: u32) -> Result<Ipld> {
+    fn serialize_u32(self, v: u32) -> Result<()> {
         self.serialize_u64(u64::from(v))
     }
 
-    fn serialize_u64(self, v: u64) -> Result<Ipld> {
+    fn serialize_u64(self, v: u64) -> Result<()> {
         self.output = Ipld::Integer(v.into());
-        Ok(self.output)
+        Ok(())
     }
 
-    fn serialize_f32(self, v: f32) -> Result<Ipld> {
+    fn serialize_f32(self, v: f32) -> Result<()> {
         self.serialize_f64(f64::from(v))
     }
 
-    fn serialize_f64(self, v: f64) -> Result<Ipld> {
+    fn serialize_f64(self, v: f64) -> Result<()> {
         self.output = Ipld::Float(v);
-        Ok(self.output)
+        Ok(())
     }
 
-    fn serialize_char(self, v: char) -> Result<Ipld> {
+    fn serialize_char(self, v: char) -> Result<()> {
         self.serialize_str(&v.to_string())
     }
 
-    fn serialize_str(self, v: &str) -> Result<Ipld> {
+    fn serialize_str(self, v: &str) -> Result<()> {
         self.output = Ipld::String(String::from(v));
-        Ok(self.output)
+        Ok(())
     }
 
-    fn serialize_bytes(self, v: &[u8]) -> Result<Ipld> {
+    fn serialize_bytes(self, v: &[u8]) -> Result<()> {
         self.output = Ipld::Bytes(Vec::<u8>::from(v));
-        Ok(self.output)
+        Ok(())
     }
 
-    fn serialize_none(self) -> Result<Ipld> {
+    fn serialize_none(self) -> Result<()> {
         self.serialize_unit()
     }
 
-    fn serialize_some<T>(self, value: &T) -> Result<Ipld>
+    fn serialize_some<T>(self, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
@@ -114,13 +109,13 @@ impl<'a> ser::Serializer for &'a mut IpldSerializer {
     }
 
     // ()
-    fn serialize_unit(self) -> Result<Ipld> {
+    fn serialize_unit(self) -> Result<()> {
         self.output = Ipld::Null;
-        Ok(self.output)
+        Ok(())
     }
 
     // Struct w/o data
-    fn serialize_unit_struct(self, _name: &'static str) -> Result<Ipld> {
+    fn serialize_unit_struct(self, _name: &'static str) -> Result<()> {
         self.serialize_unit()
     }
 
@@ -130,11 +125,11 @@ impl<'a> ser::Serializer for &'a mut IpldSerializer {
         _name: &'static str,
         _variant_index: u32,
         variant: &'static str,
-    ) -> Result<Ipld> {
+    ) -> Result<()> {
         self.serialize_str(variant)
     }
 
-    fn serialize_newtype_struct<T>(self, _name: &'static str, value: &T) -> Result<Ipld>
+    fn serialize_newtype_struct<T>(self, _name: &'static str, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
@@ -147,15 +142,15 @@ impl<'a> ser::Serializer for &'a mut IpldSerializer {
         _variant_index: u32,
         variant: &'static str,
         value: &T,
-    ) -> Result<Ipld>
+    ) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
         self.output = Ipld::StringMap(BTreeMap::from([(
             String::from(_name),
-            value.serialize(&mut *self)?,
+            to_ipld(value)?,
         )]));
-        Ok(self.output)
+        Ok(())
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
@@ -223,17 +218,16 @@ impl<'a> ser::Serializer for &'a mut IpldSerializer {
 }
 
 impl<'a> ser::SerializeSeq for &'a mut IpldSerializer {
-    type Ok = Ipld;
+    type Ok = ();
     type Error = Error;
 
     fn serialize_element<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
-        match self.output {
+        match &mut self.output {
             Ipld::List(v) => {
-                let o = value.serialize(*self);
-                v.push(o?);
+                v.push(to_ipld(value)?);
                 Ok(())
             }
             _ => {
@@ -242,13 +236,13 @@ impl<'a> ser::SerializeSeq for &'a mut IpldSerializer {
         }
     }
 
-    fn end(self) -> Result<Ipld> {
-        Ok(self.output)
+    fn end(self) -> Result<()> {
+        Ok(())
     }
 }
 
 impl<'a> ser::SerializeTuple for &'a mut IpldSerializer {
-    type Ok = Ipld;
+    type Ok = ();
     type Error = Error;
 
     fn serialize_element<T>(&mut self, value: &T) -> Result<()>
@@ -258,13 +252,13 @@ impl<'a> ser::SerializeTuple for &'a mut IpldSerializer {
         ser::SerializeSeq::serialize_element(self, value)
     }
 
-    fn end(self) -> Result<Ipld> {
+    fn end(self) -> Result<()> {
         ser::SerializeSeq::end(self)
     }
 }
 
 impl<'a> ser::SerializeTupleStruct for &'a mut IpldSerializer {
-    type Ok = Ipld;
+    type Ok = ();
     type Error = Error;
 
     fn serialize_field<T>(&mut self, value: &T) -> Result<()>
@@ -274,25 +268,25 @@ impl<'a> ser::SerializeTupleStruct for &'a mut IpldSerializer {
         ser::SerializeTuple::serialize_element(self, value)
     }
 
-    fn end(self) -> Result<Ipld> {
+    fn end(self) -> Result<()> {
         ser::SerializeTuple::end(self)
     }
 }
 
 impl<'a> ser::SerializeTupleVariant for &'a mut IpldSerializer {
-    type Ok = Ipld;
+    type Ok = ();
     type Error = Error;
 
     fn serialize_field<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
-        match self.output {
+        match &mut self.output {
             Ipld::StringMap(m) => {
-                match m.iter().next() {
-                    Some(entry) => match entry.1 {
+                match &mut m.iter_mut().next() {
+                    Some(entry) => match &mut entry.1 {
                         Ipld::List(v) => {
-                            v.push(value.serialize(*self)?);
+                            v.push(to_ipld(value)?);
                         }
                         _ => {
                             panic!("Expected List");
@@ -310,25 +304,24 @@ impl<'a> ser::SerializeTupleVariant for &'a mut IpldSerializer {
         }
     }
 
-    fn end(self) -> Result<Ipld> {
-        Ok(self.output)
+    fn end(self) -> Result<()> {
+        Ok(())
     }
 }
 
 impl<'a> ser::SerializeMap for &'a mut IpldSerializer {
-    type Ok = Ipld;
+    type Ok = ();
     type Error = Error;
 
     fn serialize_key<T>(&mut self, key: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
-        match self.output {
+        match &mut self.output {
             Ipld::List(v) => {
-                let pair = Vec::<Ipld>::with_capacity(2);
-                pair.push(key.serialize(*self)?);
+                let mut pair = Vec::<Ipld>::with_capacity(2);
+                pair.push(to_ipld(key)?);
                 v.push(Ipld::List(pair));
-                assert_eq!(self.output, Ipld::List(v));
                 Ok(())
             }
             _ => {
@@ -341,10 +334,10 @@ impl<'a> ser::SerializeMap for &'a mut IpldSerializer {
     where
         T: ?Sized + Serialize,
     {
-        match self.output {
-            Ipld::List(v) => match v[v.len() - 1] {
-                Ipld::List(pair) => {
-                    pair.push(value.serialize(*self)?);
+        match &mut self.output {
+            Ipld::List(v) => match &mut v.last_mut() {
+                Some(Ipld::List(pair)) => {
+                    pair.push(to_ipld(value)?);
                     Ok(())
                 }
                 _ => {
@@ -357,13 +350,13 @@ impl<'a> ser::SerializeMap for &'a mut IpldSerializer {
         }
     }
 
-    fn end(self) -> Result<Ipld> {
-        Ok(self.output)
+    fn end(self) -> Result<()> {
+        Ok(())
     }
 }
 
 impl<'a> ser::SerializeStruct for &'a mut IpldSerializer {
-    type Ok = Ipld;
+    type Ok = ();
     type Error = Error;
 
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
@@ -371,9 +364,9 @@ impl<'a> ser::SerializeStruct for &'a mut IpldSerializer {
         T: ?Sized + Serialize,
     {
         
-        match self.output {
+        match &mut self.output {
             Ipld::StringMap(m) => {
-                m.insert(String::from(key), value.serialize(*self)?);
+                m.insert(String::from(key), to_ipld(value)?);
             }
             _ => {
                 panic!("Expected Map");
@@ -383,28 +376,28 @@ impl<'a> ser::SerializeStruct for &'a mut IpldSerializer {
         Ok(())
     }
 
-    fn end(self) -> Result<Ipld> {
-        Ok(self.output)
+    fn end(self) -> Result<()> {
+        Ok(())
     }
 }
 
 // Similar to `SerializeTupleVariant`, here the `end` method is responsible for
 // closing both of the curly braces opened by `serialize_struct_variant`.
 impl<'a> ser::SerializeStructVariant for &'a mut IpldSerializer {
-    type Ok = Ipld;
+    type Ok = ();
     type Error = Error;
 
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
-        match self.output {
+        match &mut self.output {
             Ipld::StringMap(top) => {
-                match top.iter().next() {
+                match &mut top.iter_mut().next() {
                     Some(entry) => {
-                        match entry.1 {
+                        match &mut entry.1 {
                             Ipld::StringMap(m) => {
-                                m.insert(String::from(key), value.serialize(*self)?);
+                                m.insert(String::from(key), to_ipld(value)?);
                             }
                             _ => {
                                 panic!("Expected Map")
@@ -423,7 +416,7 @@ impl<'a> ser::SerializeStructVariant for &'a mut IpldSerializer {
         Ok(())
     }
 
-    fn end(self) -> Result<Ipld> {
-        Ok(self.output)
+    fn end(self) -> Result<()> {
+        Ok(())
     }
 }

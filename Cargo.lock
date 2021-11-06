@@ -639,8 +639,6 @@ dependencies = [
 [[package]]
 name = "ipfs-api-backend-hyper"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa89b3cf763f52e1d0cc00cfcec6c20388556891789d180006e4cb878fa78cc9"
 dependencies = [
  "async-trait",
  "bytes",
@@ -657,8 +655,6 @@ dependencies = [
 [[package]]
 name = "ipfs-api-prelude"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cb5d1bed0ce082bf4276d09c644d4a0f3b1b11b7ab3054fcfbc2aa0b015a4da"
 dependencies = [
  "async-trait",
  "bytes",
@@ -674,6 +670,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "typed-builder",
  "walkdir",
 ]
 
@@ -1615,6 +1612,7 @@ dependencies = [
  "cid",
  "clap",
  "ipfs-api-backend-hyper",
+ "ipfs-api-prelude",
  "libipld",
  "serde",
  "tokio",
@@ -1663,6 +1661,17 @@ name = "try-lock"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59547bce71d9c38b83d9c0e92b6066c4253371f15005def0c30d9657f50c7642"
+
+[[package]]
+name = "typed-builder"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a46ee5bd706ff79131be9c94e7edcb82b703c487766a114434e5790361cf08c5"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "typenum"

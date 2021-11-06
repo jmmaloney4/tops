@@ -1,7 +1,10 @@
 use clap::{crate_authors, crate_description, crate_name, crate_version, App, Arg, SubCommand};
+use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
 use libipld::block::Block;
 use libipld::cbor::DagCborCodec;
+use libipld::cid::Cid;
 use libipld::ipld::Ipld;
+use libipld::link;
 use libipld::multihash::Code;
 use libipld::store::DefaultParams;
 use serde::Serialize;
@@ -10,11 +13,12 @@ use std::io::prelude::*;
 use std::io::stdin;
 use std::path::Path;
 
-mod de;
-mod error;
-mod ser;
+// mod de;
+// mod error;
+// mod ser;
 
-fn main() {
+#[tokio::main]
+async fn main() {    
     let matches = App::new(crate_name!())
         .version(crate_version!())
         .author(crate_authors!())
@@ -45,18 +49,7 @@ fn main() {
             };
 
             let b = Blob::from(s.as_bytes().to_vec());
-            println!("{:?}", ser::to_ipld(&b));
-
-            // let block = match Block::<DefaultParams>::encode(
-            //     DagCborCodec,
-            //     Code::Sha2_256,
-            //     &Ipld::Bytes(s.into_bytes()),
-            // ) {
-            //     Err(e) => {
-            //         panic!("{}", e)
-            //     }
-            //     Ok(block) => block,
-            // };
+            let client = IpfsClient::default();
 
             // println!("{}", block.cid());
         }
@@ -66,12 +59,11 @@ fn main() {
     }
 }
 
-enum Revision {
-    FileRevision(FileRevision),
-}
+type Link = link::Link<Cid>;
 
-struct FileRevision {
-    blob: Blob,
+struct Revision {
+    blob: Link,
+    previous: Option<Link>,
 }
 
 #[derive(Serialize, Debug, PartialEq, Eq)]
@@ -92,5 +84,5 @@ impl Blob {
 }
 
 struct File {
-    root: Revision,
+    root: Link,
 }

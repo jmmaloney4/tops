@@ -11,7 +11,8 @@ license = "MPL-2.0"
 [dependencies]
 clap = "^2.33"
 cid = "^0.7.0"
-ipfs-api-backend-hyper = { version = "^0.2", features = ["with-hyper-rustls"]}
+ipfs-api-backend-hyper = { path = "../rust-ipfs-api/ipfs-api-backend-hyper", features = ["with-hyper-rustls"]}
+ipfs-api-prelude = { path = "../rust-ipfs-api/ipfs-api-prelude", features = ["with-builder"] }
 tokio =  { version = "1", features = ["full"] }
 libipld = "0.12.0"
 serde = "1.0.130"

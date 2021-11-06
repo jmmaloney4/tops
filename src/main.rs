@@ -4,13 +4,12 @@ use libipld::cbor::DagCborCodec;
 use libipld::ipld::Ipld;
 use libipld::multihash::Code;
 use libipld::store::DefaultParams;
+use serde::Serialize;
 use std::fs;
 use std::io::prelude::*;
 use std::io::stdin;
 use std::path::Path;
-use serde::Serialize;
 
-// mod serde;
 mod de;
 mod error;
 mod ser;

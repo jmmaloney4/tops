@@ -11,13 +11,10 @@ pub fn to_ipld<T>(value: &T) -> Result<Ipld>
 where
     T: ?Sized + Serialize,
 {
-    let mut serializer = IpldSerializer {
-        output: Ipld::Null,
-    };
+    let mut serializer = IpldSerializer { output: Ipld::Null };
     value.serialize(&mut serializer)?;
     Ok(serializer.output)
 }
-
 
 impl<'a> ser::Serializer for &'a mut IpldSerializer {
     type Ok = ();
@@ -146,10 +143,7 @@ impl<'a> ser::Serializer for &'a mut IpldSerializer {
     where
         T: ?Sized + Serialize,
     {
-        self.output = Ipld::StringMap(BTreeMap::from([(
-            String::from(_name),
-            to_ipld(value)?,
-        )]));
+        self.output = Ipld::StringMap(BTreeMap::from([(String::from(_name), to_ipld(value)?)]));
         Ok(())
     }
 
@@ -363,7 +357,6 @@ impl<'a> ser::SerializeStruct for &'a mut IpldSerializer {
     where
         T: ?Sized + Serialize,
     {
-        
         match &mut self.output {
             Ipld::StringMap(m) => {
                 m.insert(String::from(key), to_ipld(value)?);
@@ -392,23 +385,19 @@ impl<'a> ser::SerializeStructVariant for &'a mut IpldSerializer {
         T: ?Sized + Serialize,
     {
         match &mut self.output {
-            Ipld::StringMap(top) => {
-                match &mut top.iter_mut().next() {
-                    Some(entry) => {
-                        match &mut entry.1 {
-                            Ipld::StringMap(m) => {
-                                m.insert(String::from(key), to_ipld(value)?);
-                            }
-                            _ => {
-                                panic!("Expected Map")
-                            }
-                        }
+            Ipld::StringMap(top) => match &mut top.iter_mut().next() {
+                Some(entry) => match &mut entry.1 {
+                    Ipld::StringMap(m) => {
+                        m.insert(String::from(key), to_ipld(value)?);
                     }
                     _ => {
-                        panic!("Expected Non-Empty Map");
+                        panic!("Expected Map")
                     }
+                },
+                _ => {
+                    panic!("Expected Non-Empty Map");
                 }
-            }
+            },
             _ => {
                 panic!("Expected Map")
             }

@@ -18,3 +18,4 @@ libipld = "0.12.0"
 serde = "1.0.130"
 anyhow = "1.0.13"
 hyper                     = { version = "0.14", features = ["http1", "http2", "client", "tcp"] }
+futures = "0.3"

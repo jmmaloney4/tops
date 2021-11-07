@@ -1611,6 +1611,7 @@ dependencies = [
  "anyhow",
  "cid",
  "clap",
+ "futures",
  "hyper",
  "ipfs-api-backend-hyper",
  "ipfs-api-prelude",

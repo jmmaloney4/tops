@@ -1,4 +1,5 @@
 use clap::{crate_authors, crate_description, crate_name, crate_version, App, Arg, SubCommand};
+use futures::TryStreamExt;
 use hyper::client::HttpConnector;
 use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
 use libipld::block::Block;
@@ -25,34 +26,63 @@ async fn main() {
         .author(crate_authors!())
         .about(crate_description!())
         .subcommand(SubCommand::with_name("add").arg(Arg::with_name("input").index(1)))
+        .subcommand(SubCommand::with_name("get").arg(Arg::with_name("id").index(1).required(true)))
+        .subcommand(
+            SubCommand::with_name("update")
+                .arg(Arg::with_name("id").index(1).required(true))
+                .arg(Arg::with_name("input").index(2)),
+        )
         .get_matches();
 
-    // You can also match on a subcommand's name
     match matches.subcommand() {
         ("add", Some(add_matches)) => {
-            let f: Box<dyn Read + Send + Sync> = match add_matches.value_of("input") {
-                Some(path) => {
-                    let path = Path::new(path);
-                    match fs::File::open(path) {
-                        Err(why) => panic!("couldn't open {}: {}", path.display(), why),
-                        Ok(file) => Box::new(file),
-                    }
-                }
-                None => Box::new(stdin()),
-            };
+            let f = path_or_stdin(add_matches.value_of("input"));
 
             let client = IpfsClient::<HttpConnector>::default();
 
-            match client.add(f).await {
+            match client.block_put(f).await {
                 Ok(file) => eprintln!("added file: {:?}", file),
                 Err(e) => eprintln!("error adding file: {}", e),
             }
+        }
+        ("get", Some(update_matches)) => {
+            let id = update_matches.value_of("id").unwrap();
 
-            // println!("{}", block.cid());
+            let client = IpfsClient::<HttpConnector>::default();
+            match client
+                .block_get(id)
+                .map_ok(|chunk| chunk.to_vec())
+                .try_concat()
+                .await
+            {
+                Ok(bytes) => {
+                    println!("{}", String::from_utf8_lossy(&bytes[..]));
+                }
+                Err(e) => {
+                    eprintln!("error reading dag node: {}", e);
+                }
+            }
+        }
+        ("update", Some(update_matches)) => {
+            let id = update_matches.value_of("input").unwrap();
+            let f = path_or_stdin(update_matches.value_of("input"));
         }
         _ => {
             println!("{}", matches.usage());
         }
+    }
+}
+
+fn path_or_stdin(path: Option<&str>) -> Box<dyn Read + Send + Sync> {
+    match path {
+        Some(path) => {
+            let path = Path::new(path);
+            match fs::File::open(path) {
+                Err(why) => panic!("couldn't open {}: {}", path.display(), why),
+                Ok(file) => Box::new(file),
+            }
+        }
+        None => Box::new(stdin()),
     }
 }
 

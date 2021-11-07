@@ -40,17 +40,20 @@ async fn main() {
 
             let client = IpfsClient::<HttpConnector>::default();
 
-            match client.block_put(f).await {
-                Ok(file) => eprintln!("added file: {:?}", file),
-                Err(e) => eprintln!("error adding file: {}", e),
-            }
+            let block = match client.dag_put(f).await {
+                Ok(r) => r,
+                Err(e) => panic!("error adding file: {}", e),
+            };
+
+            println!("{}", block.cid.cid_string);
+            
         }
         ("get", Some(update_matches)) => {
             let id = update_matches.value_of("id").unwrap();
 
             let client = IpfsClient::<HttpConnector>::default();
             match client
-                .block_get(id)
+                .dag_get(id)
                 .map_ok(|chunk| chunk.to_vec())
                 .try_concat()
                 .await

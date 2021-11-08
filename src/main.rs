@@ -111,6 +111,9 @@ struct File {
 mod unixfs {
     use anyhow::{bail, Result};
     use libipld::cid::Cid;
+    use libipld::prelude::*;
+    use libipld::Ipld;
+    use std::collections::BTreeMap;
     use std::io::prelude::*;
     use std::io::BufReader;
     use std::ops::DerefMut;
@@ -130,7 +133,7 @@ mod unixfs {
         T: std::io::Read,
         B: ipfs_api_prelude::IpfsApi,
     {
-        let mut cids = Vec::<String>::new();
+        let mut cids = Vec::<(usize, String)>::new();
 
         loop {
             let mut buf = std::io::Cursor::new([0_u8; BLOCK_SIZE]);
@@ -147,17 +150,60 @@ mod unixfs {
                 break;
             }
 
-            println!("{}", bytes_read);
-            match client.block_put(buf.take(bytes_read.try_into().unwrap())).await {
+            let opts = ipfs_api_prelude::request::BlockPut::builder()
+                .format("raw")
+                // .mhtype("sha3-384")
+                // .mhlen(384 / 8)
+                .build();
+            match client
+                .block_put_with_options(buf.take(bytes_read.try_into().unwrap()), opts)
+                .await
+            {
                 Err(e) => {
                     panic!("{}", e);
                 }
                 Ok(x) => {
-                    cids.push(x.key);
+                    cids.push((bytes_read, x.key));
                 }
             };
         }
-        println!("{:?}", cids);
+
+        let mut cum_size: usize = 0;
+        let file_data = cids
+            .iter()
+            .map(|(br, s)| {
+                let (base, data) = multibase::decode(s).unwrap();
+                let cid = Cid::read_bytes(data.as_slice()).unwrap();
+                let bounds = vec![
+                    Ipld::Integer(cum_size.try_into().unwrap()),
+                    Ipld::Integer((cum_size + br).try_into().unwrap()),
+                ];
+                cum_size += br;
+                let entry: Vec<Ipld> = vec![Ipld::List(bounds), Ipld::Link(cid)];
+                Ipld::List(entry)
+            })
+            .collect::<Vec<Ipld>>();
+
+        let file = Ipld::StringMap(BTreeMap::from([
+            (String::from("type"), Ipld::String(String::from("file"))),
+            (String::from("data"), Ipld::List(file_data)),
+            (
+                String::from("size"),
+                Ipld::Integer(cum_size.try_into().unwrap()),
+            ),
+        ]));
+
+        let mut bytes = Vec::new();
+        file.encode(libipld::json::DagJsonCodec, &mut bytes);
+        match client.dag_put(std::io::Cursor::new(bytes)).await {
+            Err(e) => {
+                panic!("{}", e);
+            }
+            Ok(x) => {
+                println!("{}", x.cid.cid_string);
+            }
+        };
+
         bail!("ERR");
     }
 }

@@ -14,8 +14,9 @@ cid = "^0.7.0"
 ipfs-api-backend-hyper = { path = "../rust-ipfs-api/ipfs-api-backend-hyper", features = ["with-hyper-rustls"]}
 ipfs-api-prelude = { path = "../rust-ipfs-api/ipfs-api-prelude", features = ["with-builder"] }
 tokio =  { version = "1", features = ["full"] }
-libipld = "0.12.0"
+libipld = { path = "../libipld/" }
 serde = "1.0.130"
 anyhow = "1.0.13"
-hyper                     = { version = "0.14", features = ["http1", "http2", "client", "tcp"] }
+hyper = { version = "0.14", features = ["http1", "http2", "client", "tcp"] }
 futures = "0.3"
+multibase = "0.9"

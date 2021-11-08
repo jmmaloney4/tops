@@ -719,8 +719,6 @@ checksum = "869d572136620d55835903746bcb5cdc54cb2851fd0aeec53220b4bb65ef3013"
 [[package]]
 name = "libipld"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "373a32b8d77bf13d6d5552b068e55991cc26f6f43edae25409fec5f555494438"
 dependencies = [
  "async-trait",
  "cached",
@@ -740,8 +738,6 @@ dependencies = [
 [[package]]
 name = "libipld-cbor"
 version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51882ee3a6ebc8b770b507558b8bc993659d7e96e160fb796bc1fc7c290d74c4"
 dependencies = [
  "byteorder",
  "libipld-core",
@@ -751,8 +747,6 @@ dependencies = [
 [[package]]
 name = "libipld-cbor-derive"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80cf5eeddac31280a924ac77ad90df98887ccc8c351c324b11d15b620f8cf74f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -763,8 +757,6 @@ dependencies = [
 [[package]]
 name = "libipld-core"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f29a8a4ac024d51f15cc7b71d888b51bf3ab5d26a502e3f48fc9df33d7fd02ac"
 dependencies = [
  "anyhow",
  "cid",
@@ -776,11 +768,10 @@ dependencies = [
 [[package]]
 name = "libipld-json"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3cf3a6d0e65a5b3f48774f99951d063bc28f7fd799be0a3891de4b10939434e3"
 dependencies = [
  "base64",
  "libipld-core",
+ "multibase",
  "multihash 0.14.0",
  "serde",
  "serde_json",
@@ -789,8 +780,6 @@ dependencies = [
 [[package]]
 name = "libipld-macro"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d553f07747f7cb5e62d15de5fb416bf0e22968b2ee685226e91faaffd43a464"
 dependencies = [
  "libipld-core",
 ]
@@ -798,8 +787,6 @@ dependencies = [
 [[package]]
 name = "libipld-pb"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ddbe8356b2bb59c6875d329b3f28cb323d3c0cd07a2b9804a7008e1856e4727"
 dependencies = [
  "libipld-core",
  "prost",
@@ -1616,6 +1603,7 @@ dependencies = [
  "ipfs-api-backend-hyper",
  "ipfs-api-prelude",
  "libipld",
+ "multibase",
  "serde",
  "tokio",
 ]

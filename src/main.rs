@@ -36,17 +36,8 @@ async fn main() {
 
     match matches.subcommand() {
         ("add", Some(add_matches)) => {
-            let f = path_or_stdin(add_matches.value_of("input"));
-
-            let client = IpfsClient::<HttpConnector>::default();
-
-            let block = match client.dag_put(f).await {
-                Ok(r) => r,
-                Err(e) => panic!("error adding file: {}", e),
-            };
-
-            println!("{}", block.cid.cid_string);
-            
+            let mut f = path_or_stdin(add_matches.value_of("input"));
+            unixfs::import_file(Box::new(f), IpfsClient::<HttpConnector>::default()).await;
         }
         ("get", Some(update_matches)) => {
             let id = update_matches.value_of("id").unwrap();
@@ -115,4 +106,47 @@ impl Blob {
 
 struct File {
     root: Link,
+}
+
+
+
+mod unixfs {
+    use anyhow::{bail, Result};
+    use libipld::cid::Cid;
+    use std::io::prelude::*;
+    use std::io::BufReader;
+    use std::rc::Rc;
+    use std::ops::DerefMut;
+
+    pub struct File {
+        data: FileData,
+        size: usize,
+    }
+
+    type FileData = Vec<((usize, usize), super::Link)>;
+
+    const BLOCK_SIZE: usize = 262144;
+
+    pub async fn import_file<T, B>(read: T, client: B) -> Result<File>
+    where
+        T: std::io::Read,
+        B: ipfs_api_prelude::IpfsApi,
+    {
+        let mut br = BufReader::with_capacity(BLOCK_SIZE, read);
+        let mut cids = Vec::<Cid>::new();
+
+        loop {
+            let b = br.fill_buf()?;
+            
+            let l = b.len();
+            println!("{}", l);
+            if l == 0 {
+                // EOF
+                break;
+            } else {
+                let x = client.block_put(std::io::Cursor::new(b.to_owned())).await;
+            }
+        }
+        bail!("ERR");
+    }
 }

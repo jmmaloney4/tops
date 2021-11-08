@@ -37,7 +37,7 @@ async fn main() {
     match matches.subcommand() {
         ("add", Some(add_matches)) => {
             let mut f = path_or_stdin(add_matches.value_of("input"));
-            unixfs::import_file(Box::new(f), IpfsClient::<HttpConnector>::default()).await;
+            unixfs::import_file(&mut f, IpfsClient::<HttpConnector>::default()).await;
         }
         ("get", Some(update_matches)) => {
             let id = update_matches.value_of("id").unwrap();
@@ -108,15 +108,13 @@ struct File {
     root: Link,
 }
 
-
-
 mod unixfs {
     use anyhow::{bail, Result};
     use libipld::cid::Cid;
     use std::io::prelude::*;
     use std::io::BufReader;
-    use std::rc::Rc;
     use std::ops::DerefMut;
+    use std::rc::Rc;
 
     pub struct File {
         data: FileData,
@@ -127,26 +125,39 @@ mod unixfs {
 
     const BLOCK_SIZE: usize = 262144;
 
-    pub async fn import_file<T, B>(read: T, client: B) -> Result<File>
+    pub async fn import_file<T, B>(read: &mut T, client: B) -> Result<File>
     where
         T: std::io::Read,
         B: ipfs_api_prelude::IpfsApi,
     {
-        let mut br = BufReader::with_capacity(BLOCK_SIZE, read);
-        let mut cids = Vec::<Cid>::new();
+        let mut cids = Vec::<String>::new();
 
         loop {
-            let b = br.fill_buf()?;
-            
-            let l = b.len();
-            println!("{}", l);
-            if l == 0 {
+            let mut buf = std::io::Cursor::new([0_u8; BLOCK_SIZE]);
+            let mut bytes_read = 0;
+            while let Ok(l) = read.read(&mut buf.get_mut()[bytes_read..]) {
+                bytes_read += l;
+                if l == 0 {
+                    break;
+                }
+            }
+
+            if bytes_read == 0 {
                 // EOF
                 break;
-            } else {
-                let x = client.block_put(std::io::Cursor::new(b.to_owned())).await;
             }
+
+            println!("{}", bytes_read);
+            match client.block_put(buf.take(bytes_read.try_into().unwrap())).await {
+                Err(e) => {
+                    panic!("{}", e);
+                }
+                Ok(x) => {
+                    cids.push(x.key);
+                }
+            };
         }
+        println!("{:?}", cids);
         bail!("ERR");
     }
 }

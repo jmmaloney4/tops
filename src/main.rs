@@ -2,13 +2,13 @@ use clap::{crate_authors, crate_description, crate_name, crate_version, App, Arg
 use futures::TryStreamExt;
 use hyper::client::HttpConnector;
 use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
-use libipld::block::Block;
-use libipld::cbor::DagCborCodec;
+
+
 use libipld::cid::Cid;
-use libipld::ipld::Ipld;
+
 use libipld::link;
-use libipld::multihash::Code;
-use libipld::store::DefaultParams;
+
+
 use serde::Serialize;
 use std::fs;
 use std::io::prelude::*;
@@ -58,8 +58,8 @@ async fn main() {
             }
         }
         ("update", Some(update_matches)) => {
-            let id = update_matches.value_of("input").unwrap();
-            let f = path_or_stdin(update_matches.value_of("input"));
+            let _id = update_matches.value_of("input").unwrap();
+            let _f = path_or_stdin(update_matches.value_of("input"));
         }
         _ => {
             println!("{}", matches.usage());
@@ -115,9 +115,9 @@ mod unixfs {
     use libipld::Ipld;
     use std::collections::BTreeMap;
     use std::io::prelude::*;
-    use std::io::BufReader;
-    use std::ops::DerefMut;
-    use std::rc::Rc;
+    
+    
+    
 
     pub struct File {
         data: FileData,
@@ -172,7 +172,7 @@ mod unixfs {
         let file_data = cids
             .iter()
             .map(|(br, s)| {
-                let (base, data) = multibase::decode(s).unwrap();
+                let (_base, data) = multibase::decode(s).unwrap();
                 let cid = Cid::read_bytes(data.as_slice()).unwrap();
                 let bounds = vec![
                     Ipld::Integer(cum_size.try_into().unwrap()),

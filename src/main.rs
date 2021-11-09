@@ -3,11 +3,9 @@ use futures::TryStreamExt;
 use hyper::client::HttpConnector;
 use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
 
-
 use libipld::cid::Cid;
 
 use libipld::link;
-
 
 use serde::Serialize;
 use std::fs;
@@ -115,9 +113,6 @@ mod unixfs {
     use libipld::Ipld;
     use std::collections::BTreeMap;
     use std::io::prelude::*;
-    
-    
-    
 
     pub struct File {
         data: FileData,
@@ -194,13 +189,13 @@ mod unixfs {
         ]));
 
         let mut bytes = Vec::new();
-        file.encode(libipld::json::DagJsonCodec, &mut bytes);
+        file.encode(libipld::json::DagJsonCodec, &mut bytes)?;
         match client.dag_put(std::io::Cursor::new(bytes)).await {
             Err(e) => {
                 panic!("{}", e);
             }
             Ok(x) => {
-                println!("{}", x.cid.cid_string);
+                print!("{}", x.cid.cid_string);
             }
         };
 

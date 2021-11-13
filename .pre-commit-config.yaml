@@ -5,4 +5,4 @@ repos:
     - id: fmt
     - id: cargo-check
     - id: clippy
-      args: ["--fix"]
+      args: ["--fix", "--allow-dirty"]

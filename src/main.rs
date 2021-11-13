@@ -30,6 +30,7 @@ async fn main() {
                 .arg(Arg::with_name("id").index(1).required(true))
                 .arg(Arg::with_name("input").index(2)),
         )
+        .subcommand(SubCommand::with_name("test"))
         .get_matches();
 
     match matches.subcommand() {
@@ -58,6 +59,9 @@ async fn main() {
         ("update", Some(update_matches)) => {
             let _id = update_matches.value_of("input").unwrap();
             let _f = path_or_stdin(update_matches.value_of("input"));
+        }
+        ("test", Some(test_matches)) => {
+            unixfs::hamt::test();
         }
         _ => {
             println!("{}", matches.usage());
@@ -200,5 +204,64 @@ mod unixfs {
         };
 
         bail!("ERR");
+    }
+
+    // https://github.com/ipfs/go-unixfs/tree/master/hamt
+    pub mod hamt {
+
+        use cid::Cid;
+        use libipld::Ipld;
+
+        use anyhow::{ensure, Result};
+        use bitvec::prelude::*;
+        use deku::prelude::*;
+        use murmur3::murmur3_x64_128;
+        use safe_transmute::transmute_one_to_bytes;
+
+        fn chunk_to_u8<O: BitOrder, T: BitStore>(chunk: &BitSlice<O, T>) -> Result<u8> {
+            chunk.iter().enumerate().fold(Ok(0_u8), |rv, (i, b)| {
+                let a: u8 = Into::<u8>::into(*b) * 2_u8.pow(i.try_into()?);
+                Ok(rv? + a)
+            })
+        }
+
+        fn split_hash(hash: u64, n: u8, offset: u8) -> Result<u8> {
+            ensure!(1 <= n && n <= 8);
+            ensure!(Into::<usize>::into(offset) < (64_usize / Into::<usize>::into(n)));
+
+            let mut chunk = hash
+                .view_bits::<Msb0>()
+                .chunks(n.into())
+                .nth(offset.into())
+                .unwrap();
+            chunk_to_u8(chunk)
+        }
+
+        fn compute_hash<T>(read: &mut T) -> Result<u64>
+        where
+            T: std::io::Read,
+        {
+            let hash = murmur3_x64_128(read, 0)?;
+            let buf16: [u8; 16] = hash.to_be_bytes();
+            let buf8: [u8; 8] = buf16[0..8].try_into()?;
+            Ok(u64::from_be_bytes(buf8))
+        }
+
+        pub fn test() {
+            let hash = compute_hash(&mut std::io::Cursor::new(
+                "Hello, World! Foobarbaz 3.141592653589",
+            ))
+            .unwrap();
+            println!(
+                "{:?}",
+                (0_u8..10)
+                    .map(|i| { split_hash(hash, 6, i).unwrap() })
+                    .collect::<Vec<u8>>()
+            );
+        }
+
+        fn set(key: String, value: Ipld, hamt: Cid) {}
+
+        fn get(key: String, hamt: Cid) {}
     }
 }

@@ -1,12 +1,11 @@
 [package]
 name = "tops"
 description = "Topological File System"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 authors = ["Jack Maloney <git@jmmaloney4.xyz>"]
 license = "MPL-2.0"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 clap = "^2.33"
@@ -20,3 +19,7 @@ anyhow = "1.0.13"
 hyper = { version = "0.14", features = ["http1", "http2", "client", "tcp"] }
 futures = "0.3"
 multibase = "0.9"
+murmur3 = "0.5.1"
+bitvec = "0.22.3"
+deku = "0.12"
+safe-transmute= "0.11.2"

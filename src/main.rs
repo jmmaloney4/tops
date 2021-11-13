@@ -60,7 +60,7 @@ async fn main() {
             let _id = update_matches.value_of("input").unwrap();
             let _f = path_or_stdin(update_matches.value_of("input"));
         }
-        ("test", Some(test_matches)) => {
+        ("test", Some(_test_matches)) => {
             unixfs::hamt::test();
         }
         _ => {
@@ -214,9 +214,8 @@ mod unixfs {
 
         use anyhow::{ensure, Result};
         use bitvec::prelude::*;
-        use deku::prelude::*;
+
         use murmur3::murmur3_x64_128;
-        use safe_transmute::transmute_one_to_bytes;
 
         fn chunk_to_u8<O: BitOrder, T: BitStore>(chunk: &BitSlice<O, T>) -> Result<u8> {
             chunk.iter().enumerate().fold(Ok(0_u8), |rv, (i, b)| {
@@ -226,10 +225,10 @@ mod unixfs {
         }
 
         fn split_hash(hash: u64, n: u8, offset: u8) -> Result<u8> {
-            ensure!(1 <= n && n <= 8);
+            ensure!((1..=8).contains(&n));
             ensure!(Into::<usize>::into(offset) < (64_usize / Into::<usize>::into(n)));
 
-            let mut chunk = hash
+            let chunk = hash
                 .view_bits::<Msb0>()
                 .chunks(n.into())
                 .nth(offset.into())
@@ -260,8 +259,8 @@ mod unixfs {
             );
         }
 
-        fn set(key: String, value: Ipld, hamt: Cid) {}
+        fn set(_key: String, _value: Ipld, _hamt: Cid) {}
 
-        fn get(key: String, hamt: Cid) {}
+        fn get(_key: String, _hamt: Cid) {}
     }
 }

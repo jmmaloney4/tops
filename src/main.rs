@@ -5,8 +5,9 @@ use ipfs_api_backend_hyper::request::Add;
 use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
 
 use libipld::cid::Cid;
-
 use libipld::link;
+
+use multibase::decode;
 
 use serde::Serialize;
 use std::fs;
@@ -44,7 +45,9 @@ async fn main() {
                 .add_with_options(f, Add::builder().raw_leaves(true).cid_version(1).build())
                 .await
                 .unwrap();
-            println!("{}", x.hash);
+            let (_, bytes) = decode(x.hash).unwrap();
+            let cid = cid::Cid::read_bytes(std::io::Cursor::new(bytes)).unwrap();
+            println!("{}", cid);
         }
         ("get", Some(update_matches)) => {
             let id = update_matches.value_of("id").unwrap();

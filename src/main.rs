@@ -209,9 +209,6 @@ mod unixfs {
     // https://github.com/ipfs/go-unixfs/tree/master/hamt
     pub mod hamt {
 
-        use cid::Cid;
-        use libipld::Ipld;
-
         use anyhow::{ensure, Result};
         use bitvec::prelude::*;
 
@@ -226,14 +223,17 @@ mod unixfs {
 
         fn split_hash(hash: u64, n: u8, offset: u8) -> Result<u8> {
             ensure!((1..=8).contains(&n));
-            ensure!(Into::<usize>::into(offset) < (64_usize / Into::<usize>::into(n)));
+            ensure!(Into::<usize>::into(offset) <= (64_usize / Into::<usize>::into(n)));
 
-            let chunk = hash
+            println!("{}", hash.view_bits::<Msb0>());
+
+            let chunks = hash
                 .view_bits::<Msb0>()
                 .chunks(n.into())
-                .nth(offset.into())
-                .unwrap();
-            chunk_to_u8(chunk)
+                .map(chunk_to_u8)
+                .collect::<Result<Vec<u8>>>()?;
+
+            Ok(chunks[Into::<usize>::into(offset)])
         }
 
         fn compute_hash<T>(read: &mut T) -> Result<u64>
@@ -251,16 +251,13 @@ mod unixfs {
                 "Hello, World! Foobarbaz 3.141592653589",
             ))
             .unwrap();
+            println!("{}", hash);
             println!(
                 "{:?}",
-                (0_u8..10)
+                (0_u8..11)
                     .map(|i| { split_hash(hash, 6, i).unwrap() })
                     .collect::<Vec<u8>>()
             );
         }
-
-        fn set(_key: String, _value: Ipld, _hamt: Cid) {}
-
-        fn get(_key: String, _hamt: Cid) {}
     }
 }

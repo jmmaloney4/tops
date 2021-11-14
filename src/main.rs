@@ -1,6 +1,7 @@
 use clap::{crate_authors, crate_description, crate_name, crate_version, App, Arg, SubCommand};
 use futures::TryStreamExt;
 use hyper::client::HttpConnector;
+use ipfs_api_backend_hyper::request::Add;
 use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
 
 use libipld::cid::Cid;
@@ -35,8 +36,15 @@ async fn main() {
 
     match matches.subcommand() {
         ("add", Some(add_matches)) => {
-            let mut f = path_or_stdin(add_matches.value_of("input"));
-            unixfs::import_file(&mut f, IpfsClient::<HttpConnector>::default()).await;
+            let f = path_or_stdin(add_matches.value_of("input"));
+            // unixfs::import_file(&mut f, IpfsClient::<HttpConnector>::default()).await;
+
+            let client = IpfsClient::<HttpConnector>::default();
+            let x = client
+                .add_with_options(f, Add::builder().raw_leaves(true).cid_version(1).build())
+                .await
+                .unwrap();
+            println!("{}", x.hash);
         }
         ("get", Some(update_matches)) => {
             let id = update_matches.value_of("id").unwrap();

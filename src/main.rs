@@ -1,13 +1,11 @@
 use clap::{crate_authors, crate_description, crate_name, crate_version, App, Arg, SubCommand};
 use futures::TryStreamExt;
 use hyper::client::HttpConnector;
-use ipfs_api_backend_hyper::request::Add;
+
 use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
 
 use libipld::cid::Cid;
 use libipld::link;
-
-use multibase::decode;
 
 use serde::Serialize;
 use std::fs;
@@ -37,24 +35,24 @@ async fn main() {
 
     match matches.subcommand() {
         ("add", Some(add_matches)) => {
-            let f = path_or_stdin(add_matches.value_of("input"));
-            // unixfs::import_file(&mut f, IpfsClient::<HttpConnector>::default()).await;
+            let mut f = path_or_stdin(add_matches.value_of("input"));
+            unixfs::import_file(&mut f, IpfsClient::<HttpConnector>::default()).await;
 
-            let client = IpfsClient::<HttpConnector>::default();
-            let x = client
-                .add_with_options(f, Add::builder().raw_leaves(true).cid_version(1).build())
-                .await
-                .unwrap();
-            let (_, bytes) = decode(x.hash).unwrap();
-            let cid = cid::Cid::read_bytes(std::io::Cursor::new(bytes)).unwrap();
-            println!("{}", cid);
+            // let client = IpfsClient::<HttpConnector>::default();
+            // let x = client
+            //     .add_with_options(f, Add::builder().raw_leaves(false).cid_version(1).build())
+            //     .await
+            //     .unwrap();
+            // let (_, bytes) = decode(x.hash).unwrap();
+            // let cid = cid::Cid::read_bytes(std::io::Cursor::new(bytes)).unwrap();
+            // println!("{}", cid);
         }
         ("get", Some(update_matches)) => {
             let id = update_matches.value_of("id").unwrap();
 
             let client = IpfsClient::<HttpConnector>::default();
             match client
-                .dag_get(id)
+                .get(id)
                 .map_ok(|chunk| chunk.to_vec())
                 .try_concat()
                 .await
@@ -189,7 +187,7 @@ mod unixfs {
                     Ipld::Integer((cum_size + br).try_into().unwrap()),
                 ];
                 cum_size += br;
-                let entry: Vec<Ipld> = vec![Ipld::List(bounds), Ipld::Link(cid)];
+                let entry = vec![Ipld::List(bounds), Ipld::Link(cid)];
                 Ipld::List(entry)
             })
             .collect::<Vec<Ipld>>();

@@ -47,8 +47,8 @@ async fn main() {
             // let cid = cid::Cid::read_bytes(std::io::Cursor::new(bytes)).unwrap();
             // println!("{}", cid);
         }
-        ("get", Some(update_matches)) => {
-            let id = update_matches.value_of("id").unwrap();
+        ("get", Some(get_matches)) => {
+            let id = get_matches.value_of("id").unwrap();
 
             let client = IpfsClient::<HttpConnector>::default();
             match client
@@ -121,11 +121,20 @@ struct File {
 
 mod unixfs {
     use anyhow::{bail, Result};
+    use bytes::Bytes;
+    use futures::AsyncRead;
+    use futures::AsyncSeek;
+    use futures::Stream;
+
+    use ipfs_api_backend_hyper::IpfsApi;
     use libipld::cid::Cid;
     use libipld::prelude::*;
     use libipld::Ipld;
     use std::collections::BTreeMap;
     use std::io::prelude::*;
+    use std::io::ErrorKind;
+    use std::sync::{Arc, Mutex};
+    use std::task::Poll;
 
     pub struct File {
         data: FileData,
@@ -213,6 +222,66 @@ mod unixfs {
         };
 
         bail!("ERR");
+    }
+
+    struct FileReader<B: IpfsApi> {
+        file: Cid,
+        state: Arc<Mutex<FileReaderState<B>>>,
+    }
+
+    struct FileReaderState<B: IpfsApi> {
+        client: B,
+        pos: u64,
+        file_data: Option<File>,
+        file_data_request: Box<dyn Stream<Item = Result<Bytes, B::Error>> + Unpin + 'static>,
+    }
+
+    impl<B: IpfsApi> FileReader<B> {
+        fn new(file: Cid, client: B) -> Self {
+            let file_data_request = client.dag_get(file.to_string().as_str());
+            let state = FileReaderState {
+                client,
+                pos: 0,
+                file_data: None,
+                file_data_request,
+            };
+            FileReader::<B> {
+                file,
+                state: Arc::new(Mutex::new(state)),
+            }
+        }
+    }
+
+    impl<B: IpfsApi> AsyncRead for FileReader<B> {
+        fn poll_read(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+            _buf: &mut [u8],
+        ) -> Poll<std::io::Result<usize>> {
+            let state = match self.state.lock() {
+                Err(e) => {
+                    return Poll::Ready(Err(std::io::Error::new(
+                        ErrorKind::Other,
+                        format!("Poisoned Mutex: {}", e),
+                    )))
+                }
+                Ok(state) => state,
+            };
+
+            if state.file_data.is_none() {}
+
+            Poll::Ready(Ok(0))
+        }
+    }
+
+    impl<B: IpfsApi> AsyncSeek for FileReader<B> {
+        fn poll_seek(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+            _pos: std::io::SeekFrom,
+        ) -> Poll<std::io::Result<u64>> {
+            Poll::Ready(Ok(0))
+        }
     }
 
     // https://github.com/ipfs/go-unixfs/tree/master/hamt

@@ -1359,12 +1359,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71d301d4193d031abdd79ff7e3dd721168a9572ef3fe51a1517aba235bd8f86e"
 
 [[package]]
-name = "safe-transmute"
-version = "0.11.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98a01dab6acf992653be49205bdd549f32f17cb2803e8eacf1560bf97259aae8"
-
-[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1709,6 +1703,7 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "bitvec",
+ "bytes",
  "cid",
  "clap",
  "deku",
@@ -1719,7 +1714,6 @@ dependencies = [
  "libipld",
  "multibase",
  "murmur3",
- "safe-transmute",
  "serde",
  "tokio",
 ]

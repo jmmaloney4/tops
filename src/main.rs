@@ -16,8 +16,6 @@ use std::path::Path;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
-use std::time::Duration;
-use tokio::time::sleep;
 
 use futures::AsyncRead;
 // mod de;
@@ -59,14 +57,21 @@ async fn main() {
 
             let client = IpfsClient::<HttpConnector>::default();
             let mut fr = unixfs::FileReader::new(parse_cid(id).unwrap(), client);
-            sleep(Duration::from_secs(2)).await;
             let mut cx = Context::from_waker(noop_waker_ref());
             let mut buf = [0_u8; 500];
 
-            match Pin::new(&mut fr).poll_read(&mut cx, &mut buf) {
-                Poll::Ready(_k) => {}
-                Poll::Pending => {}
-            };
+            loop {
+                // sleep(Duration::from_secs(2)).await;
+                match Pin::new(&mut fr).poll_read(&mut cx, &mut buf) {
+                    Poll::Pending => {
+                        continue;
+                    }
+                    Poll::Ready(s) => {
+                        println!("{:?}", s);
+                        break;
+                    }
+                }
+            }
             // match client
             //     .dag_get(id)
             //     .map_ok(|chunk| chunk.to_vec())
@@ -272,7 +277,11 @@ mod unixfs {
         pub fn new(file: Cid, client: B) -> Self {
             let file_data_request = client
                 .dag_get_with_codec(file.to_string().as_str(), "dag-cbor")
-                .map_ok(|chunk| chunk.to_vec())
+                .map_ok(|chunk| {
+                    let x = chunk.to_vec();
+                    println!("{:?}", x);
+                    x
+                })
                 .try_concat();
 
             let state = FileReaderState {
@@ -294,6 +303,7 @@ mod unixfs {
             cx: &mut std::task::Context<'_>,
             _buf: &mut [u8],
         ) -> Poll<std::io::Result<usize>> {
+            println!("Poll");
             let mut state = match self.state.lock() {
                 Err(e) => {
                     return Poll::Ready(Err(std::io::Error::new(
@@ -303,29 +313,36 @@ mod unixfs {
                 }
                 Ok(state) => state,
             };
+            println!("Got lock");
 
             if state.file_data.is_none() {
                 match state.file_data_request.poll_unpin(cx) {
-                    Poll::Pending => return Poll::Pending,
-                    Poll::Ready(res) => match res {
-                        Err(e) => {
-                            return Poll::Ready(Err(std::io::Error::new(
-                                ErrorKind::Other,
-                                format!("{}", e),
-                            )))
-                        }
-                        Ok(res) => match DagCborCodec.decode::<File>(res.as_slice()) {
+                    Poll::Pending => {
+                        println!("Pending");
+                        return Poll::Pending;
+                    }
+                    Poll::Ready(res) => {
+                        println!("Ready");
+                        match res {
                             Err(e) => {
                                 return Poll::Ready(Err(std::io::Error::new(
                                     ErrorKind::Other,
                                     format!("{}", e),
                                 )))
                             }
-                            Ok(file) => {
-                                println!("{:?}", file);
-                            }
-                        },
-                    },
+                            Ok(res) => match DagCborCodec.decode::<File>(res.as_slice()) {
+                                Err(e) => {
+                                    return Poll::Ready(Err(std::io::Error::new(
+                                        ErrorKind::Other,
+                                        format!("{}", e),
+                                    )))
+                                }
+                                Ok(file) => {
+                                    println!("{:?}", file);
+                                }
+                            },
+                        }
+                    }
                 }
             }
 

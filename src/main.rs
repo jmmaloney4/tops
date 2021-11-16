@@ -1,5 +1,6 @@
 use clap::{crate_authors, crate_description, crate_name, crate_version, App, Arg, SubCommand};
-use futures::TryStreamExt;
+
+use futures::task::noop_waker_ref;
 use hyper::client::HttpConnector;
 
 use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
@@ -12,7 +13,13 @@ use std::fs;
 use std::io::prelude::*;
 use std::io::stdin;
 use std::path::Path;
+use std::pin::Pin;
+use std::task::Context;
+use std::task::Poll;
+use std::time::Duration;
+use tokio::time::sleep;
 
+use futures::AsyncRead;
 // mod de;
 // mod error;
 // mod ser;
@@ -51,19 +58,28 @@ async fn main() {
             let id = get_matches.value_of("id").unwrap();
 
             let client = IpfsClient::<HttpConnector>::default();
-            match client
-                .get(id)
-                .map_ok(|chunk| chunk.to_vec())
-                .try_concat()
-                .await
-            {
-                Ok(bytes) => {
-                    println!("{}", String::from_utf8_lossy(&bytes[..]));
-                }
-                Err(e) => {
-                    eprintln!("error reading dag node: {}", e);
-                }
-            }
+            let mut fr = unixfs::FileReader::new(parse_cid(id).unwrap(), client);
+            sleep(Duration::from_secs(2)).await;
+            let mut cx = Context::from_waker(noop_waker_ref());
+            let mut buf = [0_u8; 500];
+
+            match Pin::new(&mut fr).poll_read(&mut cx, &mut buf) {
+                Poll::Ready(_k) => {}
+                Poll::Pending => {}
+            };
+            // match client
+            //     .dag_get(id)
+            //     .map_ok(|chunk| chunk.to_vec())
+            //     .try_concat()
+            //     .await
+            // {
+            //     Ok(bytes) => {
+            //         println!("{}", String::from_utf8_lossy(&bytes[..]));
+            //     }
+            //     Err(e) => {
+            //         eprintln!("error reading dag node: {}", e);
+            //     }
+            // }
         }
         ("update", Some(update_matches)) => {
             let _id = update_matches.value_of("input").unwrap();
@@ -89,6 +105,11 @@ fn path_or_stdin(path: Option<&str>) -> Box<dyn Read + Send + Sync> {
         }
         None => Box::new(stdin()),
     }
+}
+
+fn parse_cid(s: &str) -> Result<cid::Cid, cid::Error> {
+    let (_, bytes) = multibase::decode(s)?;
+    cid::Cid::read_bytes(std::io::Cursor::new(bytes))
 }
 
 type Link = link::Link<Cid>;
@@ -121,13 +142,19 @@ struct File {
 
 mod unixfs {
     use anyhow::{bail, Result};
-    use bytes::Bytes;
+
     use futures::AsyncRead;
     use futures::AsyncSeek;
-    use futures::Stream;
+    use futures::Future;
+    use futures::FutureExt;
+
+    use futures::TryStreamExt;
 
     use ipfs_api_backend_hyper::IpfsApi;
+    use libipld::cbor::DagCborCodec;
     use libipld::cid::Cid;
+    use libipld::DagCbor;
+
     use libipld::prelude::*;
     use libipld::Ipld;
     use std::collections::BTreeMap;
@@ -136,12 +163,17 @@ mod unixfs {
     use std::sync::{Arc, Mutex};
     use std::task::Poll;
 
+    #[derive(Clone, DagCbor, Debug, Eq, PartialEq)]
     pub struct File {
         data: FileData,
-        size: usize,
+        size: u64,
     }
 
-    type FileData = Vec<((usize, usize), super::Link)>;
+    #[derive(Clone, DagCbor, Debug, Eq, PartialEq)]
+    struct FileDataBounds(u64, u64);
+
+    #[derive(Clone, DagCbor, Debug, Eq, PartialEq)]
+    struct FileData(FileDataBounds, super::Link);
 
     const BLOCK_SIZE: usize = 262144;
 
@@ -224,7 +256,7 @@ mod unixfs {
         bail!("ERR");
     }
 
-    struct FileReader<B: IpfsApi> {
+    pub struct FileReader<B: IpfsApi> {
         file: Cid,
         state: Arc<Mutex<FileReaderState<B>>>,
     }
@@ -233,17 +265,21 @@ mod unixfs {
         client: B,
         pos: u64,
         file_data: Option<File>,
-        file_data_request: Box<dyn Stream<Item = Result<Bytes, B::Error>> + Unpin + 'static>,
+        file_data_request: Box<dyn Future<Output = Result<Vec<u8>, B::Error>> + Unpin>,
     }
 
     impl<B: IpfsApi> FileReader<B> {
-        fn new(file: Cid, client: B) -> Self {
-            let file_data_request = client.dag_get(file.to_string().as_str());
+        pub fn new(file: Cid, client: B) -> Self {
+            let file_data_request = client
+                .dag_get_with_codec(file.to_string().as_str(), "dag-cbor")
+                .map_ok(|chunk| chunk.to_vec())
+                .try_concat();
+
             let state = FileReaderState {
                 client,
                 pos: 0,
                 file_data: None,
-                file_data_request,
+                file_data_request: Box::new(file_data_request),
             };
             FileReader::<B> {
                 file,
@@ -255,10 +291,10 @@ mod unixfs {
     impl<B: IpfsApi> AsyncRead for FileReader<B> {
         fn poll_read(
             self: std::pin::Pin<&mut Self>,
-            _cx: &mut std::task::Context<'_>,
+            cx: &mut std::task::Context<'_>,
             _buf: &mut [u8],
         ) -> Poll<std::io::Result<usize>> {
-            let state = match self.state.lock() {
+            let mut state = match self.state.lock() {
                 Err(e) => {
                     return Poll::Ready(Err(std::io::Error::new(
                         ErrorKind::Other,
@@ -268,7 +304,30 @@ mod unixfs {
                 Ok(state) => state,
             };
 
-            if state.file_data.is_none() {}
+            if state.file_data.is_none() {
+                match state.file_data_request.poll_unpin(cx) {
+                    Poll::Pending => return Poll::Pending,
+                    Poll::Ready(res) => match res {
+                        Err(e) => {
+                            return Poll::Ready(Err(std::io::Error::new(
+                                ErrorKind::Other,
+                                format!("{}", e),
+                            )))
+                        }
+                        Ok(res) => match DagCborCodec.decode::<File>(res.as_slice()) {
+                            Err(e) => {
+                                return Poll::Ready(Err(std::io::Error::new(
+                                    ErrorKind::Other,
+                                    format!("{}", e),
+                                )))
+                            }
+                            Ok(file) => {
+                                println!("{:?}", file);
+                            }
+                        },
+                    },
+                }
+            }
 
             Poll::Ready(Ok(0))
         }
@@ -283,6 +342,8 @@ mod unixfs {
             Poll::Ready(Ok(0))
         }
     }
+
+    fn parse_file_data() {}
 
     // https://github.com/ipfs/go-unixfs/tree/master/hamt
     pub mod hamt {

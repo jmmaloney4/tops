@@ -1,6 +1,8 @@
 use clap::{crate_authors, crate_description, crate_name, crate_version, App, Arg, SubCommand};
 
+use futures::executor::LocalPool;
 use futures::task::noop_waker_ref;
+use futures::task::SpawnExt;
 use hyper::client::HttpConnector;
 
 use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
@@ -60,18 +62,19 @@ async fn main() {
             let mut cx = Context::from_waker(noop_waker_ref());
             let mut buf = [0_u8; 500];
 
-            loop {
-                // sleep(Duration::from_secs(2)).await;
+            let mut pool = LocalPool::new();
+
+            pool.spawner().spawn(async move {
                 match Pin::new(&mut fr).poll_read(&mut cx, &mut buf) {
-                    Poll::Pending => {
-                        continue;
-                    }
+                    Poll::Pending => {}
                     Poll::Ready(s) => {
                         println!("{:?}", s);
-                        break;
                     }
                 }
-            }
+            });
+
+            pool.run();
+
             // match client
             //     .dag_get(id)
             //     .map_ok(|chunk| chunk.to_vec())
@@ -153,6 +156,7 @@ mod unixfs {
     use futures::Future;
     use futures::FutureExt;
 
+    use futures::TryFutureExt;
     use futures::TryStreamExt;
 
     use ipfs_api_backend_hyper::IpfsApi;
@@ -266,23 +270,26 @@ mod unixfs {
         state: Arc<Mutex<FileReaderState<B>>>,
     }
 
+    unsafe impl<B: IpfsApi> Send for FileReader<B> {}
+
     struct FileReaderState<B: IpfsApi> {
         client: B,
         pos: u64,
         file_data: Option<File>,
-        file_data_request: Box<dyn Future<Output = Result<Vec<u8>, B::Error>> + Unpin>,
+        file_data_request: Box<dyn Future<Output = Result<File>> + Unpin>,
     }
 
     impl<B: IpfsApi> FileReader<B> {
         pub fn new(file: Cid, client: B) -> Self {
+            let cid = file;
             let file_data_request = client
                 .dag_get_with_codec(file.to_string().as_str(), "dag-cbor")
-                .map_ok(|chunk| {
-                    let x = chunk.to_vec();
-                    println!("{:?}", x);
-                    x
-                })
-                .try_concat();
+                .map_ok(|chunk| chunk.to_vec())
+                .try_concat()
+                .map(move |data| match data {
+                    Err(e) => bail!("Error fetching file data for `{}`: {}", cid, e),
+                    Ok(data) => DagCborCodec.decode::<File>(data.as_slice()),
+                });
 
             let state = FileReaderState {
                 client,
@@ -330,17 +337,18 @@ mod unixfs {
                                     format!("{}", e),
                                 )))
                             }
-                            Ok(res) => match DagCborCodec.decode::<File>(res.as_slice()) {
-                                Err(e) => {
-                                    return Poll::Ready(Err(std::io::Error::new(
-                                        ErrorKind::Other,
-                                        format!("{}", e),
-                                    )))
-                                }
-                                Ok(file) => {
-                                    println!("{:?}", file);
-                                }
-                            },
+                            Ok(file) => println!("{:?}", file),
+                            /* match DagCborCodec.decode::<File>(res.as_slice()) {
+                            Err(e) => {
+                                return Poll::Ready(Err(std::io::Error::new(
+                                    ErrorKind::Other,
+                                    format!("{}", e),
+                                )))
+                            }
+                            Ok(file) => {
+                                println!("{:?}", file);
+                            }
+                                   */
                         }
                     }
                 }

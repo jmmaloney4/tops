@@ -37,7 +37,14 @@ async fn main() {
     match matches.subcommand() {
         ("add", Some(add_matches)) => {
             let mut f = path_or_stdin(add_matches.value_of("input"));
-            unixfs::import_file(&mut f, IpfsClient::<HttpConnector>::default()).await;
+            match unixfs::import_file(&mut f, IpfsClient::<HttpConnector>::default()).await {
+                Err(e) => {
+                    panic!("{}", e);
+                }
+                Ok((_file, cid)) => {
+                    print!("{}", cid);
+                }
+            };
         }
         ("get", Some(get_matches)) => {
             let id = get_matches.value_of("id").unwrap();
@@ -46,11 +53,8 @@ async fn main() {
             let mut fr = unixfs::FileReader::new(parse_cid(id).unwrap(), client);
 
             let mut s = String::new();
-            match Pin::new(&mut fr).read_to_string(&mut s).await {
-                Err(e) => {
-                    panic!("{}", e);
-                }
-                Ok(_) => {}
+            if let Err(e) = Pin::new(&mut fr).read_to_string(&mut s).await {
+                panic!("{}", e);
             }
             println!("{}", s);
         }
@@ -114,7 +118,7 @@ struct File {
 }
 
 mod unixfs {
-    use anyhow::{bail, Result};
+    use anyhow::{bail, ensure, Result};
 
     use futures::AsyncRead;
     use futures::AsyncSeek;
@@ -124,42 +128,108 @@ mod unixfs {
     use futures::TryFutureExt;
     use futures::TryStreamExt;
 
+    use ipfs_api_backend_hyper::request::DagPut;
     use ipfs_api_backend_hyper::IpfsApi;
     use libipld::cbor::DagCborCodec;
     use libipld::cid::Cid;
     use libipld::DagCbor;
+    use libipld::Link;
 
     use libipld::prelude::*;
-    use libipld::Ipld;
-    use std::collections::BTreeMap;
+
     use std::io::prelude::*;
     use std::io::ErrorKind;
     use std::sync::{Arc, Mutex};
     use std::task::Poll;
 
+    use crate::parse_cid;
+
     #[derive(Clone, DagCbor, Debug, Eq, PartialEq)]
     pub struct File {
-        data: Vec<FileData>,
+        data: Vec<FileDataEntry>,
         size: u64,
         #[ipld(rename = "type")]
         ty: String,
     }
 
+    impl File {
+        fn new(mut data: Vec<FileDataEntry>) -> Result<Self> {
+            if data.is_empty() {
+                return Ok(File {
+                    data: Vec::new(),
+                    size: 0,
+                    ty: "file".to_string(),
+                });
+            }
+            data.sort_unstable();
+            ensure!(data[0].bounds.0 == 0, "Invaalid file data range");
+            for i in 0..(data.len() - 1) {
+                ensure!(
+                    data[i].bounds.1 == data[i + 1].bounds.0 + 1,
+                    "Invalid file data range"
+                );
+            }
+            let size = data.last().unwrap().bounds.1;
+            Ok(File {
+                data,
+                size,
+                ty: "file".to_string(),
+            })
+        }
+    }
+
     #[derive(Clone, DagCbor, Debug, Eq, PartialEq)]
     struct FileDataBounds(u64, u64);
 
+    impl PartialOrd for FileDataBounds {
+        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl Ord for FileDataBounds {
+        fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+            self.0.cmp(&other.0)
+        }
+    }
+
     #[derive(Clone, DagCbor, Debug, Eq, PartialEq)]
-    struct FileData(FileDataBounds, super::Link);
+    struct FileDataEntry {
+        bounds: FileDataBounds,
+        link: super::Link,
+    }
+
+    impl PartialOrd for FileDataEntry {
+        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+            self.bounds.partial_cmp(&other.bounds)
+        }
+    }
+
+    impl Ord for FileDataEntry {
+        fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+            self.bounds.cmp(&other.bounds)
+        }
+    }
+
+    impl FileDataEntry {
+        pub fn new(pos: u64, size: usize, cid: Cid) -> Result<Self> {
+            let s64: u64 = size.try_into()?;
+            Ok(FileDataEntry {
+                bounds: FileDataBounds(pos, pos + s64),
+                link: Link::new(cid),
+            })
+        }
+    }
 
     const BLOCK_SIZE: usize = 262144;
 
-    pub async fn import_file<T, B>(read: &mut T, client: B) -> Result<File>
+    pub async fn import_file<T, B>(read: &mut T, client: B) -> Result<(File, Cid)>
     where
         T: std::io::Read,
         B: ipfs_api_prelude::IpfsApi,
     {
-        let mut cids = Vec::<(usize, String)>::new();
-
+        let mut file_data = Vec::<FileDataEntry>::new();
+        let mut cum_size: u64 = 0;
         loop {
             let mut buf = std::io::Cursor::new([0_u8; BLOCK_SIZE]);
             let mut bytes_read = 0;
@@ -177,59 +247,41 @@ mod unixfs {
 
             let opts = ipfs_api_prelude::request::BlockPut::builder()
                 .format("raw")
-                // .mhtype("sha3-384")
-                // .mhlen(384 / 8)
                 .build();
             match client
-                .block_put_with_options(buf.take(bytes_read.try_into().unwrap()), opts)
+                .block_put_with_options(buf.take(bytes_read.try_into()?), opts)
                 .await
             {
                 Err(e) => {
                     panic!("{}", e);
                 }
                 Ok(x) => {
-                    cids.push((bytes_read, x.key));
+                    file_data.push(FileDataEntry::new(
+                        cum_size,
+                        bytes_read,
+                        parse_cid(x.key.as_str())?,
+                    )?);
+                    cum_size += TryInto::<u64>::try_into(bytes_read)?;
                 }
             };
         }
 
-        let mut cum_size: usize = 0;
-        let file_data = cids
-            .iter()
-            .map(|(br, s)| {
-                let (_base, data) = multibase::decode(s).unwrap();
-                let cid = Cid::read_bytes(data.as_slice()).unwrap();
-                let bounds = vec![
-                    Ipld::Integer(cum_size.try_into().unwrap()),
-                    Ipld::Integer((cum_size + br).try_into().unwrap()),
-                ];
-                cum_size += br;
-                let entry = vec![Ipld::List(bounds), Ipld::Link(cid)];
-                Ipld::List(entry)
-            })
-            .collect::<Vec<Ipld>>();
-
-        let file = Ipld::StringMap(BTreeMap::from([
-            (String::from("type"), Ipld::String(String::from("file"))),
-            (String::from("data"), Ipld::List(file_data)),
-            (
-                String::from("size"),
-                Ipld::Integer(cum_size.try_into().unwrap()),
-            ),
-        ]));
+        let file = File::new(file_data)?;
 
         let mut bytes = Vec::new();
-        file.encode(libipld::json::DagJsonCodec, &mut bytes)?;
-        match client.dag_put(std::io::Cursor::new(bytes)).await {
-            Err(e) => {
-                panic!("{}", e);
-            }
-            Ok(x) => {
-                print!("{}", x.cid.cid_string);
-            }
+        file.encode(DagCborCodec, &mut bytes)?;
+        let res = match client
+            .dag_put_with_options(
+                std::io::Cursor::new(bytes),
+                DagPut::builder().input_codec("dag-cbor").build(),
+            )
+            .await
+        {
+            Err(e) => bail!("{}", e),
+            Ok(res) => res,
         };
 
-        bail!("ERR");
+        Ok((file, parse_cid(&res.cid.cid_string)?))
     }
 
     pub struct FileReader<B: IpfsApi> {
@@ -255,12 +307,7 @@ mod unixfs {
                 .try_concat()
                 .map(move |data| match data {
                     Err(e) => bail!("Error fetching file data for `{}`: {}", file, e),
-                    Ok(data) => {
-                        let mut de = serde_cbor::Deserializer::from_slice(data.as_slice());
-                        let mut ser = serde_json::Serializer::new(std::io::stdout());
-                        serde_transcode::transcode(&mut de, &mut ser).unwrap();
-                        DagCborCodec.decode::<File>(data.as_slice())
-                    }
+                    Ok(data) => DagCborCodec.decode::<File>(data.as_slice()),
                 });
             let state = FileReaderState {
                 client,
@@ -312,8 +359,6 @@ mod unixfs {
 
             // This should be true now
             assert!(state.file.is_some());
-
-            println!("FILE: {:?}", state.file);
 
             Poll::Ready(Ok(0))
         }

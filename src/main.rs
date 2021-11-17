@@ -1,8 +1,6 @@
 use clap::{crate_authors, crate_description, crate_name, crate_version, App, Arg, SubCommand};
 
-use futures::executor::LocalPool;
-use futures::task::noop_waker_ref;
-use futures::task::SpawnExt;
+use futures::AsyncReadExt;
 use hyper::client::HttpConnector;
 
 use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
@@ -16,10 +14,7 @@ use std::io::prelude::*;
 use std::io::stdin;
 use std::path::Path;
 use std::pin::Pin;
-use std::task::Context;
-use std::task::Poll;
 
-use futures::AsyncRead;
 // mod de;
 // mod error;
 // mod ser;
@@ -44,50 +39,21 @@ async fn main() {
         ("add", Some(add_matches)) => {
             let mut f = path_or_stdin(add_matches.value_of("input"));
             unixfs::import_file(&mut f, IpfsClient::<HttpConnector>::default()).await;
-
-            // let client = IpfsClient::<HttpConnector>::default();
-            // let x = client
-            //     .add_with_options(f, Add::builder().raw_leaves(false).cid_version(1).build())
-            //     .await
-            //     .unwrap();
-            // let (_, bytes) = decode(x.hash).unwrap();
-            // let cid = cid::Cid::read_bytes(std::io::Cursor::new(bytes)).unwrap();
-            // println!("{}", cid);
         }
         ("get", Some(get_matches)) => {
             let id = get_matches.value_of("id").unwrap();
 
             let client = IpfsClient::<HttpConnector>::default();
             let mut fr = unixfs::FileReader::new(parse_cid(id).unwrap(), client);
-            let mut cx = Context::from_waker(noop_waker_ref());
-            let mut buf = [0_u8; 500];
 
-            let mut pool = LocalPool::new();
-
-            pool.spawner().spawn(async move {
-                match Pin::new(&mut fr).poll_read(&mut cx, &mut buf) {
-                    Poll::Pending => {}
-                    Poll::Ready(s) => {
-                        println!("{:?}", s);
-                    }
+            let mut s = String::new();
+            match Pin::new(&mut fr).read_to_string(&mut s).await {
+                Err(e) => {
+                    panic!("{}", e);
                 }
-            });
-
-            pool.run();
-
-            // match client
-            //     .dag_get(id)
-            //     .map_ok(|chunk| chunk.to_vec())
-            //     .try_concat()
-            //     .await
-            // {
-            //     Ok(bytes) => {
-            //         println!("{}", String::from_utf8_lossy(&bytes[..]));
-            //     }
-            //     Err(e) => {
-            //         eprintln!("error reading dag node: {}", e);
-            //     }
-            // }
+                Ok(_) => {}
+            }
+            println!("{}", s);
         }
         ("update", Some(update_matches)) => {
             let _id = update_matches.value_of("input").unwrap();
@@ -275,27 +241,26 @@ mod unixfs {
     struct FileReaderState<B: IpfsApi> {
         client: B,
         pos: u64,
-        file_data: Option<File>,
-        file_data_request: Box<dyn Future<Output = Result<File>> + Unpin>,
+        file: Option<File>,
+        file_fut: Box<dyn Future<Output = Result<File>> + Unpin>,
     }
 
     impl<B: IpfsApi> FileReader<B> {
         pub fn new(file: Cid, client: B) -> Self {
-            let cid = file;
-            let file_data_request = client
+            let _cid = file;
+            let fut = client
                 .dag_get_with_codec(file.to_string().as_str(), "dag-cbor")
                 .map_ok(|chunk| chunk.to_vec())
                 .try_concat()
                 .map(move |data| match data {
-                    Err(e) => bail!("Error fetching file data for `{}`: {}", cid, e),
+                    Err(e) => bail!("Error fetching file data for `{}`: {}", file, e),
                     Ok(data) => DagCborCodec.decode::<File>(data.as_slice()),
                 });
-
             let state = FileReaderState {
                 client,
                 pos: 0,
-                file_data: None,
-                file_data_request: Box::new(file_data_request),
+                file: None,
+                file_fut: Box::new(fut),
             };
             FileReader::<B> {
                 file,
@@ -310,7 +275,6 @@ mod unixfs {
             cx: &mut std::task::Context<'_>,
             _buf: &mut [u8],
         ) -> Poll<std::io::Result<usize>> {
-            println!("Poll");
             let mut state = match self.state.lock() {
                 Err(e) => {
                     return Poll::Ready(Err(std::io::Error::new(
@@ -320,39 +284,30 @@ mod unixfs {
                 }
                 Ok(state) => state,
             };
-            println!("Got lock");
 
-            if state.file_data.is_none() {
-                match state.file_data_request.poll_unpin(cx) {
+            if state.file.is_none() {
+                match state.file_fut.poll_unpin(cx) {
                     Poll::Pending => {
-                        println!("Pending");
                         return Poll::Pending;
                     }
-                    Poll::Ready(res) => {
-                        println!("Ready");
-                        match res {
-                            Err(e) => {
-                                return Poll::Ready(Err(std::io::Error::new(
-                                    ErrorKind::Other,
-                                    format!("{}", e),
-                                )))
-                            }
-                            Ok(file) => println!("{:?}", file),
-                            /* match DagCborCodec.decode::<File>(res.as_slice()) {
-                            Err(e) => {
-                                return Poll::Ready(Err(std::io::Error::new(
-                                    ErrorKind::Other,
-                                    format!("{}", e),
-                                )))
-                            }
-                            Ok(file) => {
-                                println!("{:?}", file);
-                            }
-                                   */
+                    Poll::Ready(file) => match file {
+                        Err(e) => {
+                            return Poll::Ready(Err(std::io::Error::new(
+                                ErrorKind::Other,
+                                format!("{}", e),
+                            )));
                         }
-                    }
+                        Ok(file) => {
+                            state.file = Some(file);
+                        }
+                    },
                 }
             }
+
+            // This should be true now
+            assert!(state.file.is_some());
+
+            println!("FILE: {:?}", state.file);
 
             Poll::Ready(Ok(0))
         }

@@ -5,7 +5,6 @@ use hyper::client::HttpConnector;
 
 use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
 
-use libipld::cid::Cid;
 use libipld::link;
 
 use serde::Serialize;
@@ -86,7 +85,7 @@ fn parse_cid(s: &str) -> Result<cid::Cid, cid::Error> {
     cid::Cid::read_bytes(std::io::Cursor::new(bytes))
 }
 
-type Link = link::Link<Cid>;
+type Link = link::Link<cid::Cid>;
 
 struct Revision {
     blob: Link,
@@ -140,8 +139,10 @@ mod unixfs {
 
     #[derive(Clone, DagCbor, Debug, Eq, PartialEq)]
     pub struct File {
-        data: FileData,
+        data: Vec<FileData>,
         size: u64,
+        #[ipld(rename = "type")]
+        ty: String,
     }
 
     #[derive(Clone, DagCbor, Debug, Eq, PartialEq)]
@@ -254,7 +255,12 @@ mod unixfs {
                 .try_concat()
                 .map(move |data| match data {
                     Err(e) => bail!("Error fetching file data for `{}`: {}", file, e),
-                    Ok(data) => DagCborCodec.decode::<File>(data.as_slice()),
+                    Ok(data) => {
+                        let mut de = serde_cbor::Deserializer::from_slice(data.as_slice());
+                        let mut ser = serde_json::Serializer::new(std::io::stdout());
+                        serde_transcode::transcode(&mut de, &mut ser).unwrap();
+                        DagCborCodec.decode::<File>(data.as_slice())
+                    }
                 });
             let state = FileReaderState {
                 client,

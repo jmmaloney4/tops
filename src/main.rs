@@ -118,13 +118,14 @@ struct File {
 }
 
 mod unixfs {
-    use anyhow::{bail, ensure, Result};
+    use anyhow::{anyhow, bail, ensure, Result};
 
     use futures::AsyncRead;
     use futures::AsyncSeek;
     use futures::Future;
     use futures::FutureExt;
 
+    use futures::StreamExt;
     use futures::TryFutureExt;
     use futures::TryStreamExt;
 
@@ -138,6 +139,7 @@ mod unixfs {
     use libipld::prelude::*;
 
     use std::io::prelude::*;
+    use std::io::Cursor;
     use std::io::ErrorKind;
     use std::sync::{Arc, Mutex};
     use std::task::Poll;
@@ -296,6 +298,11 @@ mod unixfs {
         pos: u64,
         file: Option<File>,
         file_fut: Box<dyn Future<Output = Result<File>> + Unpin>,
+        buf: Cursor<Vec<u8>>,
+        request: Option<(
+            FileDataEntry,
+            Box<dyn Future<Output = Result<Vec<u8>>> + Unpin>,
+        )>,
     }
 
     impl<B: IpfsApi> FileReader<B> {
@@ -314,6 +321,8 @@ mod unixfs {
                 pos: 0,
                 file: None,
                 file_fut: Box::new(fut),
+                buf: Cursor::new(Vec::new()),
+                request: None,
             };
             FileReader::<B> {
                 file,
@@ -326,7 +335,7 @@ mod unixfs {
         fn poll_read(
             self: std::pin::Pin<&mut Self>,
             cx: &mut std::task::Context<'_>,
-            _buf: &mut [u8],
+            buf: &mut [u8],
         ) -> Poll<std::io::Result<usize>> {
             let mut state = match self.state.lock() {
                 Err(e) => {
@@ -359,6 +368,72 @@ mod unixfs {
 
             // This should be true now
             assert!(state.file.is_some());
+
+            let l = state.buf.read(buf)?;
+            if l != 0 {
+                state.pos += match TryInto::<u64>::try_into(l) {
+                    Err(e) => {
+                        return Poll::Ready(Err(std::io::Error::new(
+                            ErrorKind::Other,
+                            format!("{}", e),
+                        )));
+                    }
+                    Ok(l) => l,
+                };
+                return Poll::Ready(Ok(l));
+            } else {
+                // Buffer is empty
+                let chunk = match state
+                    .file
+                    .as_ref()
+                    .unwrap()
+                    .data
+                    .iter()
+                    .find(|entry| entry.bounds.0 == state.pos)
+                {
+                    None => {
+                        // Couldn't find the next block, so EOF.
+                        return Poll::Ready(Ok(0));
+                    }
+                    Some(chunk) => chunk,
+                };
+
+                match &state.request {
+                    None => {
+                        // Start a request for the next chunk if one doesn't exist
+                        let waker = cx.waker().clone();
+                        state.request = Some((
+                            chunk.clone(),
+                            Box::new(
+                                state
+                                    .client
+                                    .block_get(chunk.link.to_string().as_str())
+                                    .map_ok(|result| result.to_vec())
+                                    .try_concat()
+                                    .map_err(|e| anyhow!("{}", e))
+                                    .map(move |result| {
+                                        waker.wake();
+                                        result
+                                    }),
+                            ),
+                        ));
+
+                        return Poll::Pending;
+                    }
+                    Some((_bounds, _request)) => {
+                        // match request.poll_unpin(cx) {
+                        //     Poll::Pending => {
+                        //         // Needs to handle the waker properly. Must clone it again.
+                        //         return Poll::Pending;
+                        //     }
+                        //     Poll::Ready(data) => {
+                        //         return Poll::Pending;
+                        //     }
+                        // }
+                        return Poll::Pending;
+                    }
+                }
+            }
 
             Poll::Ready(Ok(0))
         }

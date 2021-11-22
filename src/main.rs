@@ -44,18 +44,18 @@ async fn main() {
                 }
             };
         }
-        ("get", Some(get_matches)) => {
-            let id = get_matches.value_of("id").unwrap();
+        // ("get", Some(get_matches)) => {
+        //     let id = get_matches.value_of("id").unwrap();
 
-            let client = IpfsClient::<HttpConnector>::default();
-            let mut fr = unixfs::FileReader::new(parse_cid(id).unwrap(), client);
+        //     let client = IpfsClient::<HttpConnector>::default();
+        //     let mut fr = unixfs::FileReader::new(parse_cid(id).unwrap(), client);
 
-            let mut s = String::new();
-            if let Err(e) = Pin::new(&mut fr).read_to_string(&mut s).await {
-                panic!("{}", e);
-            }
-            println!("{}", s);
-        }
+        //     let mut s = String::new();
+        //     if let Err(e) = Pin::new(&mut fr).read_to_string(&mut s).await {
+        //         panic!("{}", e);
+        //     }
+        //     println!("{}", s);
+        // }
         ("update", Some(update_matches)) => {
             let _id = update_matches.value_of("input").unwrap();
             let _f = path_or_stdin(update_matches.value_of("input"));

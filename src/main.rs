@@ -1,6 +1,5 @@
 use clap::{crate_authors, crate_description, crate_name, crate_version, App, Arg, SubCommand};
 
-use futures::AsyncReadExt;
 use hyper::client::HttpConnector;
 
 use ipfs_api_backend_hyper::{IpfsApi, IpfsClient};
@@ -11,7 +10,6 @@ use std::fs;
 use std::io::prelude::*;
 use std::io::stdin;
 use std::path::Path;
-use std::pin::Pin;
 
 mod unixfs;
 

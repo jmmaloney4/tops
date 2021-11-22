@@ -1,8 +1,5 @@
-use anyhow::{anyhow, bail, ensure, Result};
+use anyhow::{bail, ensure, Result};
 
-use futures::AsyncRead;
-use futures::AsyncSeek;
-use futures::Future;
 use futures::FutureExt;
 
 use futures::StreamExt;
@@ -10,12 +7,11 @@ use futures::TryFutureExt;
 use futures::TryStreamExt;
 
 use ipfs_api_backend_hyper::request::BlockPut;
-use ipfs_api_backend_hyper::request::DagPut;
+
 use ipfs_api_backend_hyper::IpfsApi;
-use ipfs_api_prelude::Backend;
-use itertools::unfold;
+
 use itertools::Itertools;
-use libipld::cbor::DagCborCodec;
+
 use libipld::cid::Cid;
 use libipld::DagCbor;
 use libipld::Link;
@@ -25,14 +21,8 @@ use libipld::prelude::*;
 use std::io::prelude::*;
 use std::io::Cursor;
 use std::io::ErrorKind;
-use std::iter::successors;
-use std::ops::Deref;
-use std::sync::{Arc, Mutex};
-use std::task::Poll;
 
-use fill::{Chunk, IntoFoldMap};
-
-use crate::parse_cid;
+use fill::Chunk;
 
 #[derive(Clone, DagCbor, Debug, Eq, PartialEq)]
 pub struct File {
@@ -117,17 +107,39 @@ const BLOCK_SIZE: usize = 262144;
 /// [`BLOCK_SIZE`](BLOCK_SIZE) sized chunks.
 pub async fn import_file<R: Read + Chunk, B: IpfsApi>(read: R, client: B) -> Result<(File, Cid)> {
     let mut cum_size = 0;
-    let f = futures::stream::iter(read.chunked(BLOCK_SIZE)).and_then(|data| {
-        let opts = BlockPut::builder().format("raw").build();
-        let len = data.len();
-        client
-            .block_put_with_options(Cursor::new(data), opts)
-            .map(move |res| match res {
-                Err(e) => Err(e),
-                Ok(res) => Ok((len, super::parse_cid(res.key.as_str()))),
-            })
+    let _f = futures::stream::iter(read.chunked(BLOCK_SIZE))
+        .and_then(|data| {
+            let opts = BlockPut::builder().format("raw").build();
+            let len = data.len();
+            client
+                .block_put_with_options(Cursor::new(data), opts)
+                .map_err(|e| std::io::Error::new(ErrorKind::Other, format!("{}", e)))
+                .map(move |res| {
+                    let res = match res {
+                        Err(e) => {
+                            return Err(std::io::Error::new(ErrorKind::Other, format!("{}", e)))
+                        }
+                        Ok(res) => res,
+                    };
+                    match super::parse_cid(res.key.as_str()) {
+                        Err(e) => Err(std::io::Error::new(ErrorKind::Other, format!("{}", e))),
+                        Ok(cid) => Ok((len, cid)),
+                    }
+                })
+        })
+        .map_ok(|(len, cid)| {
+            {
+                let rv = FileDataEntry::new(cum_size, len, cid);
+                match TryInto::<u64>::try_into(len) {
+                    Err(e) => Err(e),
+                    Ok(len) => {
+                        cum_size += len;
+                        Ok(rv)
+                    }
+                }
+            }
             .map_err(|e| std::io::Error::new(ErrorKind::Other, format!("{}", e)))
-    });
+        });
     /*.map_ok(|(len, cid)| {
         match cid {
             Err(e) => std::io::Error::new(ErrorKind::Other, format!("{}", e)),

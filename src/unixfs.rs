@@ -1,4 +1,4 @@
-use anyhow::{bail, ensure, Result};
+use anyhow::{anyhow, bail, ensure, Error, Result};
 
 use futures::FutureExt;
 
@@ -20,7 +20,6 @@ use libipld::prelude::*;
 
 use std::io::prelude::*;
 use std::io::Cursor;
-use std::io::ErrorKind;
 
 use fill::Chunk;
 
@@ -107,39 +106,33 @@ const BLOCK_SIZE: usize = 262144;
 /// [`BLOCK_SIZE`](BLOCK_SIZE) sized chunks.
 pub async fn import_file<R: Read + Chunk, B: IpfsApi>(read: R, client: B) -> Result<(File, Cid)> {
     let mut cum_size = 0;
-    let _f = futures::stream::iter(read.chunked(BLOCK_SIZE))
-        .and_then(|data| {
-            let opts = BlockPut::builder().format("raw").build();
-            let len = data.len();
-            client
-                .block_put_with_options(Cursor::new(data), opts)
-                .map_err(|e| std::io::Error::new(ErrorKind::Other, format!("{}", e)))
-                .map(move |res| {
-                    let res = match res {
-                        Err(e) => {
-                            return Err(std::io::Error::new(ErrorKind::Other, format!("{}", e)))
-                        }
-                        Ok(res) => res,
-                    };
-                    match super::parse_cid(res.key.as_str()) {
-                        Err(e) => Err(std::io::Error::new(ErrorKind::Other, format!("{}", e))),
-                        Ok(cid) => Ok((len, cid)),
-                    }
-                })
-        })
-        .map_ok(|(len, cid)| {
-            {
-                let rv = FileDataEntry::new(cum_size, len, cid);
-                match TryInto::<u64>::try_into(len) {
-                    Err(e) => Err(e),
-                    Ok(len) => {
-                        cum_size += len;
-                        Ok(rv)
-                    }
+    let f = futures::stream::iter(read.chunked(BLOCK_SIZE)).and_then(|data| {
+        let len = data.len();
+        client.block_put_with_options(Cursor::new(data), BlockPut::builder().format("raw").build())
+    });
+    /*
+    .and_then(|data| {
+        let opts = BlockPut::builder().format("raw").build();
+        let len = data.len();
+        client
+            .block_put_with_options(Cursor::new(data), opts)
+            .map_err(|e| anyhow!("{}", e))
+            .map(move |res| match res {
+                Err(e) => Err(e),
+                Ok(res) => Ok((len, super::parse_cid(res.key.as_str()))),
+            })
+    })
+    .map_ok(|(len, cid)| {
+            let rv = FileDataEntry::new(cum_size, len, cid);
+            match TryInto::<u64>::try_into(len) {
+                Err(e) => bail!(e),
+                Ok(len) => {
+                    cum_size += len;
+                    Ok(rv)
                 }
             }
-            .map_err(|e| std::io::Error::new(ErrorKind::Other, format!("{}", e)))
-        });
+    });*/
+    // .collect::<Result<Vec<FileDataBounds>>>();
     /*.map_ok(|(len, cid)| {
         match cid {
             Err(e) => std::io::Error::new(ErrorKind::Other, format!("{}", e)),

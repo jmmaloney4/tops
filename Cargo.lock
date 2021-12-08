@@ -1782,6 +1782,7 @@ dependencies = [
  "serde-transcode",
  "serde_cbor",
  "serde_json",
+ "thiserror",
  "tokio",
 ]
 
